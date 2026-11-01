@@ -1,0 +1,37 @@
+{
+  "region": "us-east-1",
+  "groups": [
+    {
+      "name": "never-recycles",
+      "launch_configuration": null,
+      "launch_template": {
+        "id": "lt-0999888777666555",
+        "name": "never-recycles",
+        "configured_version": "$Latest",
+        "target_version": "12"
+      },
+      "template_versions": {
+        "11": {
+          "ImageId": "ami-0aaa111bbb222ccc3",
+          "InstanceType": "r6i.large",
+          "SecurityGroupIds": ["sg-0x"],
+          "IamInstanceProfile": "never-recycles",
+          "UserData": "ZWNob28="
+        },
+        "12": {
+          "ImageId": "ami-0aaa111bbb222ccc3",
+          "InstanceType": "r6i.xlarge",
+          "SecurityGroupIds": ["sg-0x"],
+          "IamInstanceProfile": "never-recycles",
+          "UserData": "ZWNob28="
+        }
+      },
+      "instances": [
+        {"id": "i-0f01", "version": "12", "lifecycle_state": "InService", "launch_time": "2026-10-30T00:00:00+00:00"},
+        {"id": "i-0f02", "version": "12", "lifecycle_state": "InService", "launch_time": "2026-10-30T00:00:10+00:00"},
+        {"id": "i-0f03", "version": "12", "lifecycle_state": "InService", "launch_time": "2026-10-30T00:00:20+00:00"},
+        {"id": "i-0f04", "version": "11", "lifecycle_state": "InService", "launch_time": "2026-05-04T00:00:00+00:00"}
+      ]
+    }
+  ]
+}

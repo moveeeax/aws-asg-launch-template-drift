@@ -1,0 +1,37 @@
+{
+  "region": "eu-west-1",
+  "groups": [
+    {
+      "name": "mostly-old",
+      "launch_configuration": null,
+      "launch_template": {
+        "id": "lt-0123456789abcdef0",
+        "name": "mostly-old",
+        "configured_version": "5",
+        "target_version": "5"
+      },
+      "template_versions": {
+        "2": {
+          "ImageId": "ami-0dddeeefff0001112",
+          "InstanceType": "m5.large",
+          "SecurityGroupIds": ["sg-0q"],
+          "IamInstanceProfile": "mostly-old",
+          "UserData": "c3RhcnQ="
+        },
+        "5": {
+          "ImageId": "ami-0dddeeefff0001112",
+          "InstanceType": "m7g.large",
+          "SecurityGroupIds": ["sg-0q"],
+          "IamInstanceProfile": "mostly-old",
+          "UserData": "c3RhcnQ="
+        }
+      },
+      "instances": [
+        {"id": "i-0g01", "version": "5", "lifecycle_state": "InService", "launch_time": "2026-10-31T12:00:00+00:00"},
+        {"id": "i-0g02", "version": "2", "lifecycle_state": "InService", "launch_time": "2026-10-28T12:00:00+00:00"},
+        {"id": "i-0g03", "version": "2", "lifecycle_state": "InService", "launch_time": "2026-10-28T12:00:10+00:00"},
+        {"id": "i-0g04", "version": "2", "lifecycle_state": "InService", "launch_time": "2026-10-28T12:00:20+00:00"}
+      ]
+    }
+  ]
+}

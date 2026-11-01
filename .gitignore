@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+/build/
+/dist/
+/.venv/
+/venv/
+*.egg-info/
+/.pytest_cache/
+/.ruff_cache/
+/.coverage
+/htmlcov/
+
+# Fixtures are the test suite's input: never ignore them.
+!tests/fixtures/**
+!examples/**

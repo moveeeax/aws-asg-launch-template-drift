@@ -1,0 +1,107 @@
+{
+  "region": "eu-central-1",
+  "groups": [
+    {
+      "name": "prod-web",
+      "launch_configuration": null,
+      "launch_template": {
+        "id": "lt-0a1b2c3d4e5f60071",
+        "name": "prod-web",
+        "configured_version": "$Latest",
+        "target_version": "7"
+      },
+      "template_versions": {
+        "4": {
+          "ImageId": "ami-0c9f3a1e7b2d4f501",
+          "InstanceType": "m6i.large",
+          "SecurityGroupIds": ["sg-0web", "sg-0shared"],
+          "IamInstanceProfile": "arn:aws:iam::111122223333:instance-profile/prod-web",
+          "UserData": "IyEvYmluL2Jhc2gKZWNobyAid2ViIHYxIgo="
+        },
+        "7": {
+          "ImageId": "ami-07d41bb6c5e8a2f94",
+          "InstanceType": "m6i.large",
+          "SecurityGroupIds": ["sg-0shared", "sg-0web"],
+          "IamInstanceProfile": "arn:aws:iam::111122223333:instance-profile/prod-web",
+          "UserData": "IyEvYmluL2Jhc2gKZWNobyAid2ViIHYyIgo="
+        }
+      },
+      "instances": [
+        {"id": "i-0aa1", "version": "7", "lifecycle_state": "InService", "launch_time": "2026-10-29T08:14:00+00:00"},
+        {"id": "i-0aa2", "version": "7", "lifecycle_state": "InService", "launch_time": "2026-10-29T08:14:10+00:00"},
+        {"id": "i-0aa3", "version": "7", "lifecycle_state": "InService", "launch_time": "2026-10-29T08:14:20+00:00"},
+        {"id": "i-0aa4", "version": "7", "lifecycle_state": "InService", "launch_time": "2026-10-29T08:14:30+00:00"},
+        {"id": "i-0aa5", "version": "7", "lifecycle_state": "InService", "launch_time": "2026-10-29T08:14:40+00:00"},
+        {"id": "i-0aa6", "version": "7", "lifecycle_state": "InService", "launch_time": "2026-10-29T08:14:50+00:00"},
+        {"id": "i-0bb1", "version": "4", "lifecycle_state": "InService", "launch_time": "2026-10-20T03:02:00+00:00"},
+        {"id": "i-0bb2", "version": "4", "lifecycle_state": "InService", "launch_time": "2026-10-21T03:02:00+00:00"}
+      ]
+    },
+    {
+      "name": "prod-api",
+      "launch_configuration": null,
+      "launch_template": {
+        "id": "lt-0f1e2d3c4b5a60082",
+        "name": "prod-api",
+        "configured_version": "3",
+        "target_version": "3"
+      },
+      "template_versions": {
+        "3": {
+          "ImageId": "ami-07d41bb6c5e8a2f94",
+          "InstanceType": "c7g.xlarge",
+          "SecurityGroupIds": ["sg-0api"],
+          "IamInstanceProfile": "arn:aws:iam::111122223333:instance-profile/prod-api",
+          "UserData": "IyEvYmluL2Jhc2gKZWNobyAiYXBpIgo="
+        }
+      },
+      "instances": [
+        {"id": "i-0cc1", "version": "3", "lifecycle_state": "InService", "launch_time": "2026-10-30T11:00:00+00:00"},
+        {"id": "i-0cc2", "version": "3", "lifecycle_state": "InService", "launch_time": "2026-10-30T11:00:10+00:00"},
+        {"id": "i-0cc3", "version": "3", "lifecycle_state": "InService", "launch_time": "2026-10-30T11:00:20+00:00"},
+        {"id": "i-0cc4", "version": "3", "lifecycle_state": "Terminating:Wait", "launch_time": "2026-08-01T11:00:00+00:00"}
+      ]
+    },
+    {
+      "name": "staging-workers",
+      "launch_configuration": null,
+      "launch_template": {
+        "id": "lt-0ab12cd34ef560093",
+        "name": "staging-workers",
+        "configured_version": "$Default",
+        "target_version": "9"
+      },
+      "template_versions": {
+        "8": {
+          "ImageId": "ami-0b55c1d9e7a3f2608",
+          "InstanceType": "t3.small",
+          "SecurityGroupIds": ["sg-0b", "sg-0a", "sg-0c"],
+          "IamInstanceProfile": "staging-workers",
+          "UserData": "IyEvYmluL2Jhc2gKZWNobyAid29yayIK"
+        },
+        "9": {
+          "ImageId": "ami-0b55c1d9e7a3f2608",
+          "InstanceType": "t3.small",
+          "SecurityGroupIds": ["sg-0c", "sg-0a", "sg-0b"],
+          "IamInstanceProfile": "staging-workers",
+          "UserData": "IyEvYmluL2Jhc2gKZWNobyAid29yayIK"
+        }
+      },
+      "instances": [
+        {"id": "i-0dd1", "version": "9", "lifecycle_state": "InService", "launch_time": "2026-10-31T09:00:00+00:00"},
+        {"id": "i-0dd2", "version": "9", "lifecycle_state": "InService", "launch_time": "2026-10-31T09:00:10+00:00"},
+        {"id": "i-0dd3", "version": "8", "lifecycle_state": "InService", "launch_time": "2026-10-27T09:00:00+00:00"}
+      ]
+    },
+    {
+      "name": "legacy-batch",
+      "launch_configuration": "legacy-batch-lc-20190412",
+      "launch_template": null,
+      "template_versions": {},
+      "instances": [
+        {"id": "i-0ee1", "version": null, "lifecycle_state": "InService", "launch_time": "2026-02-11T04:30:00+00:00"},
+        {"id": "i-0ee2", "version": null, "lifecycle_state": "InService", "launch_time": "2026-02-11T04:30:10+00:00"}
+      ]
+    }
+  ]
+}
