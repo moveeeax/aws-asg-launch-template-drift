@@ -29,7 +29,18 @@ COMPARED_FIELDS = (
 )
 
 #: Fields whose drift makes a group critical on its own, whatever the stale share.
-DEFAULT_CRITICAL_FIELDS = ("ImageId",)
+#: MetadataOptions is here because a stale version can be the one that still allows
+#: IMDSv1 (``HttpTokens: optional``); ``--no-default-critical`` drops it again.
+DEFAULT_CRITICAL_FIELDS = ("ImageId", "MetadataOptions")
+
+#: Default critical fields that ``--no-default-critical`` keeps.
+ALWAYS_CRITICAL_FIELDS = ("ImageId",)
+
+#: Why drift in a critical field matters, as printed in the group's reasons.
+_CRITICAL_CONSEQUENCES = {
+    "ImageId": "the next scale-out changes the running image",
+    "MetadataOptions": "stale instances run with different IMDS settings than new ones",
+}
 
 #: Instances on their way out of the group are not drift, they are churn.
 _IGNORED_LIFECYCLE_PREFIXES = ("Terminat", "Detach")
@@ -246,11 +257,7 @@ def analyse_group(
     escalated = [f for f in finding["drifted_fields"] if f in critical_fields]
     for field in escalated:
         finding["severity"] = "critical"
-        consequence = (
-            "the next scale-out changes the running image"
-            if field == "ImageId"
-            else "marked critical by --critical-field"
-        )
+        consequence = _CRITICAL_CONSEQUENCES.get(field, "marked critical by --critical-field")
         finding["reasons"].append(
             f"{field} differs between version {oldest_version} and version "
             f"{target_version} — {consequence}"
