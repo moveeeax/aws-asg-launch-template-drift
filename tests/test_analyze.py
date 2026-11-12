@@ -189,25 +189,34 @@ def test_unparseable_launch_time_is_not_fatal(now):
     assert finding["oldest_stale_age_days"] is None
 
 
-def test_imds_change_is_reported_as_drift(launch_fields, now):
+def test_imds_change_is_critical_by_default(launch_fields, now):
     edge = by_name(analyse(launch_fields, now=now), "edge-imds")
+    assert edge["drifted_fields"] == ["MetadataOptions"]
+    assert edge["severity"] == "critical"
+    assert (
+        "MetadataOptions differs between version 5 and version 6 — stale instances run "
+        "with different IMDS settings than new ones"
+    ) in edge["reasons"]
+    # An escalated field is not repeated in the "also differs" line.
+    assert not any("also differs" in reason for reason in edge["reasons"])
+
+
+def test_imds_change_only_warns_without_the_default(launch_fields, now):
+    edge = by_name(analyse(launch_fields, now=now, critical_fields=["ImageId"]), "edge-imds")
     assert edge["drifted_fields"] == ["MetadataOptions"]
     assert edge["severity"] == "warn"
     assert "version 5 also differs in MetadataOptions" in edge["reasons"]
 
 
 def test_critical_field_escalates_a_group(launch_fields, now):
-    result = analyse(launch_fields, now=now, critical_fields=["ImageId", "MetadataOptions"])
-    edge = by_name(result, "edge-imds")
-    assert edge["severity"] == "critical"
-    assert any(
-        reason.startswith("MetadataOptions differs between version 5 and version 6")
-        and "--critical-field" in reason
-        for reason in edge["reasons"]
-    )
-    # An escalated field is not repeated in the "also differs" line.
-    assert not any("also differs" in reason for reason in edge["reasons"])
-    assert by_name(result, "db-proxy")["severity"] == "warn"
+    result = analyse(launch_fields, now=now, critical_fields=["ImageId", "KeyName"])
+    proxy = by_name(result, "db-proxy")
+    assert proxy["severity"] == "critical"
+    assert (
+        "KeyName differs between version 2 and version 3 — marked critical by --critical-field"
+    ) in proxy["reasons"]
+    assert "version 2 also differs in BlockDeviceMappings" in proxy["reasons"]
+    assert by_name(result, "edge-imds")["severity"] == "warn"
 
 
 def test_root_volume_and_key_changes_are_drift(launch_fields, now):
@@ -235,7 +244,7 @@ def test_image_id_is_not_critical_when_it_is_not_compared(prod, now):
 def test_result_lists_compared_and_critical_fields(prod, now):
     result = analyse(prod, now=now)
     assert result["compared_fields"] == list(COMPARED_FIELDS)
-    assert result["critical_fields"] == ["ImageId"]
+    assert result["critical_fields"] == ["ImageId", "MetadataOptions"]
 
 
 class TestDiffVersions:

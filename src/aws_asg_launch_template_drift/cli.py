@@ -8,6 +8,7 @@ import sys
 
 from . import __version__
 from .analyze import (
+    ALWAYS_CRITICAL_FIELDS,
     COMPARED_FIELDS,
     DEFAULT_CRITICAL_FIELDS,
     PayloadError,
@@ -72,6 +73,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="make drift in this field critical on its own, like ImageId (repeatable)",
     )
     parser.add_argument(
+        "--no-default-critical",
+        action="store_true",
+        help="drop the default critical fields except ImageId "
+        f"(default critical: {','.join(DEFAULT_CRITICAL_FIELDS)})",
+    )
+    parser.add_argument(
         "--format",
         choices=("text", "json", "markdown"),
         default="text",
@@ -108,7 +115,11 @@ def _split_fields(values: list[str]) -> list[str]:
 
 
 def _resolve_fields(args: argparse.Namespace) -> tuple[list[str], list[str]]:
-    """Validate --fields and --critical-field, returning both in COMPARED_FIELDS order."""
+    """Validate --fields and --critical-field, returning both in COMPARED_FIELDS order.
+
+    Critical fields are the defaults (only ImageId with --no-default-critical) plus every
+    --critical-field, limited to the fields being compared.
+    """
     known = ", ".join(COMPARED_FIELDS)
     chosen = _split_fields(args.fields)
     escalate = _split_fields(args.critical_field)
@@ -121,7 +132,8 @@ def _resolve_fields(args: argparse.Namespace) -> tuple[list[str], list[str]]:
     for name in escalate:
         if name not in fields:
             raise ValueError(f"--critical-field {name} is not among the compared --fields")
-    critical = set(escalate) | {f for f in DEFAULT_CRITICAL_FIELDS if f in fields}
+    defaults = ALWAYS_CRITICAL_FIELDS if args.no_default_critical else DEFAULT_CRITICAL_FIELDS
+    critical = set(escalate) | {f for f in defaults if f in fields}
     return fields, [f for f in fields if f in critical]
 
 

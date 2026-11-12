@@ -101,16 +101,39 @@ def test_version_flag(capsys):
     assert "aws-asg-launch-template-drift" in capsys.readouterr().out
 
 
-def test_imds_drift_is_warn_by_default(capsys):
-    assert main(["--from-json", LAUNCH_FIELDS, "--fail-on", "critical", *AGELESS]) == 0
-    assert "MetadataOptions" in capsys.readouterr().out
+def test_imds_drift_is_critical_by_default(capsys):
+    assert main(["--from-json", LAUNCH_FIELDS, "--fail-on", "critical", *AGELESS]) == 1
+    out = capsys.readouterr().out
+    assert "CRIT  edge-imds" in out
+    assert "different IMDS settings" in out
+
+
+def test_no_default_critical_turns_imds_back_to_warn(capsys):
+    args = ["--from-json", LAUNCH_FIELDS, "--fail-on", "critical", *AGELESS]
+    assert main([*args, "--no-default-critical"]) == 0
+    out = capsys.readouterr().out
+    assert "WARN  edge-imds" in out
+    assert "version 5 also differs in MetadataOptions" in out
+
+
+def test_no_default_critical_keeps_image_id(capsys):
+    args = ["--from-json", PROD, "--format", "json", "--no-default-critical", *AGELESS]
+    assert main(args) == 0
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed["critical_fields"] == ["ImageId"]
+    groups = {g["name"]: g for g in parsed["groups"]}
+    assert groups["prod-web"]["severity"] == "critical"
 
 
 def test_critical_field_escalates_to_exit_one(capsys):
-    args = ["--from-json", LAUNCH_FIELDS, "--fail-on", "critical", *AGELESS]
-    assert main([*args, "--critical-field", "MetadataOptions"]) == 1
+    args = ["--from-json", LAUNCH_FIELDS, "--fail-on", "critical", "--no-default-critical"]
+    assert main([*args, *AGELESS, "--critical-field", "MetadataOptions"]) == 1
     out = capsys.readouterr().out
     assert "CRIT  edge-imds" in out
+    assert "different IMDS settings" in out
+    assert main([*args, *AGELESS, "--critical-field", "KeyName"]) == 1
+    out = capsys.readouterr().out
+    assert "CRIT  db-proxy" in out
     assert "marked critical by --critical-field" in out
 
 
