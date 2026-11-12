@@ -7,6 +7,7 @@ Everything in here works on plain dicts, the same shape the collector produces a
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Iterable
 from datetime import UTC, datetime
 from typing import Any
@@ -20,7 +21,15 @@ COMPARED_FIELDS = (
     "SecurityGroupIds",
     "IamInstanceProfile",
     "UserData",
+    "MetadataOptions",
+    "BlockDeviceMappings",
+    "KeyName",
+    "NetworkInterfaces",
+    "TagSpecifications",
 )
+
+#: Fields whose drift makes a group critical on its own, whatever the stale share.
+DEFAULT_CRITICAL_FIELDS = ("ImageId",)
 
 #: Instances on their way out of the group are not drift, they are churn.
 _IGNORED_LIFECYCLE_PREFIXES = ("Terminat", "Detach")
@@ -35,9 +44,25 @@ def worst(severities: Iterable[str]) -> str:
     return max(severities, key=lambda s: SEVERITY_ORDER[s], default="ok")
 
 
+def _canonical(value: Any) -> str:
+    """Serialise a nested launch template structure so key order cannot cause a diff."""
+    return json.dumps(value, sort_keys=True, default=str)
+
+
+def _sorted_by_canonical(items: Iterable[Any]) -> list[Any]:
+    return sorted(items, key=_canonical)
+
+
+def _normalise_interface(interface: dict) -> dict:
+    out = dict(interface)
+    if out.get("Groups") is not None:
+        out["Groups"] = sorted(str(g) for g in out["Groups"])
+    return out
+
+
 def _normalise(field: str, value: Any) -> Any:
     """Reduce a launch template field to something comparable across versions."""
-    if value is None:
+    if value is None or value == [] or value == {}:
         return None
     if field == "SecurityGroupIds":
         # Order is an artefact of the API response, not a configuration change.
@@ -45,16 +70,44 @@ def _normalise(field: str, value: Any) -> Any:
     if field == "UserData":
         # Userdata is base64 and can be enormous; the hash is enough to spot a change.
         return hashlib.sha256(str(value).encode("utf-8")).hexdigest()
+    if field == "MetadataOptions":
+        # State is pending/applied: it reports rollout progress, not configuration.
+        options = {k: v for k, v in dict(value).items() if k != "State"}
+        return _canonical(options) if options else None
+    if field == "BlockDeviceMappings":
+        # One mapping per device name; the list order means nothing.
+        return _canonical(_sorted_by_canonical(value))
+    if field == "NetworkInterfaces":
+        # Interfaces are identified by card and device index, not by list position.
+        interfaces = sorted(
+            (_normalise_interface(i) for i in value),
+            key=lambda i: (
+                i.get("NetworkCardIndex") or 0,
+                i.get("DeviceIndex") or 0,
+                _canonical(i),
+            ),
+        )
+        return _canonical(interfaces)
+    if field == "TagSpecifications":
+        specs = [
+            {**spec, "Tags": _sorted_by_canonical(spec.get("Tags") or [])}
+            for spec in value
+        ]
+        return _canonical(_sorted_by_canonical(specs))
+    if isinstance(value, dict | list):
+        return _canonical(value)
     return str(value)
 
 
-def diff_versions(old: dict | None, new: dict | None) -> list[str]:
+def diff_versions(
+    old: dict | None, new: dict | None, fields: Iterable[str] = COMPARED_FIELDS
+) -> list[str]:
     """Return the compared fields that differ between two launch template versions."""
     if not old or not new:
         return []
     return [
         field
-        for field in COMPARED_FIELDS
+        for field in fields
         if _normalise(field, old.get(field)) != _normalise(field, new.get(field))
     ]
 
@@ -99,10 +152,13 @@ def analyse_group(
     *,
     critical_pct: float = 50.0,
     max_age_days: int = 30,
+    fields: Iterable[str] = COMPARED_FIELDS,
+    critical_fields: Iterable[str] = DEFAULT_CRITICAL_FIELDS,
     now: datetime | None = None,
 ) -> dict:
     """Analyse a single group payload and return its finding."""
     now = now or datetime.now(UTC)
+    critical_fields = set(critical_fields)
     name = group.get("name") or "<unnamed>"
     instances = _live_instances(group)
     total = len(instances)
@@ -169,7 +225,7 @@ def analyse_group(
 
     template_versions = group.get("template_versions") or {}
     finding["drifted_fields"] = diff_versions(
-        template_versions.get(oldest_version), template_versions.get(target_version)
+        template_versions.get(oldest_version), template_versions.get(target_version), fields
     )
 
     dated = [(_age_days(i.get("launch_time"), now), i) for i in stale]
@@ -187,11 +243,17 @@ def analyse_group(
         f"instead of version {target_version}"
     )
 
-    if "ImageId" in finding["drifted_fields"]:
+    escalated = [f for f in finding["drifted_fields"] if f in critical_fields]
+    for field in escalated:
         finding["severity"] = "critical"
+        consequence = (
+            "the next scale-out changes the running image"
+            if field == "ImageId"
+            else "marked critical by --critical-field"
+        )
         finding["reasons"].append(
-            f"ImageId differs between version {oldest_version} and version "
-            f"{target_version} — the next scale-out changes the running image"
+            f"{field} differs between version {oldest_version} and version "
+            f"{target_version} — {consequence}"
         )
     if finding["stale_pct"] > critical_pct:
         finding["severity"] = "critical"
@@ -209,7 +271,7 @@ def analyse_group(
             f"{max_age_days} day limit"
         )
 
-    other = [f for f in finding["drifted_fields"] if f != "ImageId"]
+    other = [f for f in finding["drifted_fields"] if f not in critical_fields]
     if other:
         finding["reasons"].append(
             f"version {oldest_version} also differs in {', '.join(other)}"
@@ -223,6 +285,8 @@ def analyse(
     *,
     critical_pct: float = 50.0,
     max_age_days: int = 30,
+    fields: Iterable[str] = COMPARED_FIELDS,
+    critical_fields: Iterable[str] = DEFAULT_CRITICAL_FIELDS,
     now: datetime | None = None,
 ) -> dict:
     """Analyse a whole payload, returning findings sorted by severity then staleness."""
@@ -235,9 +299,16 @@ def analyse(
         if not isinstance(group, dict):
             raise PayloadError(f"groups[{index}] is not a JSON object")
 
+    fields = list(fields)
+    critical_fields = list(critical_fields)
     findings = [
         analyse_group(
-            group, critical_pct=critical_pct, max_age_days=max_age_days, now=now
+            group,
+            critical_pct=critical_pct,
+            max_age_days=max_age_days,
+            fields=fields,
+            critical_fields=critical_fields,
+            now=now,
         )
         for group in groups
     ]
@@ -251,6 +322,8 @@ def analyse(
 
     return {
         "region": payload.get("region"),
+        "compared_fields": fields,
+        "critical_fields": [f for f in fields if f in set(critical_fields)],
         "summary": {
             "groups": len(findings),
             "ok": counts["ok"],

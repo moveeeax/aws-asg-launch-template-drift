@@ -10,7 +10,17 @@ from collections.abc import Iterable
 from typing import Any
 
 #: Launch template fields the analyser compares, as they appear in LaunchTemplateData.
-_TEMPLATE_FIELDS = ("ImageId", "InstanceType", "IamInstanceProfile", "UserData")
+_TEMPLATE_FIELDS = (
+    "ImageId",
+    "InstanceType",
+    "IamInstanceProfile",
+    "UserData",
+    "MetadataOptions",
+    "BlockDeviceMappings",
+    "KeyName",
+    "NetworkInterfaces",
+    "TagSpecifications",
+)
 
 
 def parse_tag_filters(tags: Iterable[str]) -> list[dict]:

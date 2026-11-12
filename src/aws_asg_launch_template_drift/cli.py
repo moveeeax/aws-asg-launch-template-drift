@@ -7,7 +7,13 @@ import json
 import sys
 
 from . import __version__
-from .analyze import PayloadError, analyse, exit_code
+from .analyze import (
+    COMPARED_FIELDS,
+    DEFAULT_CRITICAL_FIELDS,
+    PayloadError,
+    analyse,
+    exit_code,
+)
 from .report import render
 
 EXIT_USAGE = 2
@@ -51,6 +57,21 @@ def build_parser() -> argparse.ArgumentParser:
         help="age of the oldest stale instance that makes a group critical (default 30)",
     )
     parser.add_argument(
+        "--fields",
+        action="append",
+        default=[],
+        metavar="FIELD[,FIELD]",
+        help="launch template fields to compare (repeatable, comma-separated; "
+        f"default all: {','.join(COMPARED_FIELDS)})",
+    )
+    parser.add_argument(
+        "--critical-field",
+        action="append",
+        default=[],
+        metavar="FIELD",
+        help="make drift in this field critical on its own, like ImageId (repeatable)",
+    )
+    parser.add_argument(
         "--format",
         choices=("text", "json", "markdown"),
         default="text",
@@ -76,6 +97,34 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _split_fields(values: list[str]) -> list[str]:
+    out: list[str] = []
+    for value in values:
+        for name in value.split(","):
+            name = name.strip()
+            if name and name not in out:
+                out.append(name)
+    return out
+
+
+def _resolve_fields(args: argparse.Namespace) -> tuple[list[str], list[str]]:
+    """Validate --fields and --critical-field, returning both in COMPARED_FIELDS order."""
+    known = ", ".join(COMPARED_FIELDS)
+    chosen = _split_fields(args.fields)
+    escalate = _split_fields(args.critical_field)
+    for name in chosen + escalate:
+        if name not in COMPARED_FIELDS:
+            raise ValueError(f"unknown field {name!r}; choose from {known}")
+    if args.fields and not chosen:
+        raise ValueError(f"--fields needs at least one field; choose from {known}")
+    fields = [f for f in COMPARED_FIELDS if not chosen or f in chosen]
+    for name in escalate:
+        if name not in fields:
+            raise ValueError(f"--critical-field {name} is not among the compared --fields")
+    critical = set(escalate) | {f for f in DEFAULT_CRITICAL_FIELDS if f in fields}
+    return fields, [f for f in fields if f in critical]
+
+
 def _load_payload(path: str) -> dict:
     try:
         if path == "-":
@@ -98,6 +147,11 @@ def main(argv: list[str] | None = None) -> int:
     if args.max_age_days < 0:
         print("--max-age-days must not be negative", file=sys.stderr)
         return EXIT_USAGE
+    try:
+        fields, critical_fields = _resolve_fields(args)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return EXIT_USAGE
 
     try:
         if args.from_json:
@@ -115,6 +169,8 @@ def main(argv: list[str] | None = None) -> int:
             payload,
             critical_pct=args.critical_pct,
             max_age_days=args.max_age_days,
+            fields=fields,
+            critical_fields=critical_fields,
         )
     except PayloadError as exc:
         print(f"error: {exc}", file=sys.stderr)

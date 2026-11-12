@@ -25,10 +25,21 @@ Three calls, joined:
 3. `describe_instances` — launch times, only so the report can say how long a stale
    instance has been running.
 
-Versions are compared on the five fields that change what a replacement instance actually
-runs: `ImageId`, `InstanceType`, `SecurityGroupIds`, `IamInstanceProfile` and `UserData`.
-Security groups are compared as a set, because response ordering is not a configuration
-change, and userdata is compared by SHA-256 so a 16 KB blob does not end up in the report.
+Versions are compared on the fields that change what a replacement instance actually runs:
+
+| Field | Compared as |
+| --- | --- |
+| `ImageId`, `InstanceType`, `KeyName` | plain value |
+| `IamInstanceProfile` | profile ARN, or name when no ARN is set |
+| `SecurityGroupIds` | a set: top-level groups plus every `NetworkInterfaces[].Groups` |
+| `UserData` | SHA-256, so a 16 KB blob does not end up in the report |
+| `MetadataOptions` | IMDS settings (`HttpTokens`, hop limit, endpoint...), ignoring `State`, which only says whether the change has been applied yet |
+| `BlockDeviceMappings` | the set of mappings, so volume size, type, IOPS or encryption changes show up but list order does not |
+| `NetworkInterfaces` | each interface keyed by `NetworkCardIndex` and `DeviceIndex`, with its `Groups` as a set |
+| `TagSpecifications` | the set of resource types and the set of tags on each |
+
+Response ordering is never a configuration change, and an empty list or object counts the
+same as a missing field. `--fields` narrows the comparison to the fields you name.
 
 Severity per group:
 
@@ -36,11 +47,14 @@ Severity per group:
 | --- | --- |
 | `ok` | every live instance is on the target version |
 | `warn` | any instance is stale, or the group still uses a launch configuration |
-| `critical` | the drift includes `ImageId`, or the stale share exceeds `--critical-pct` (default 50), or the oldest stale instance is older than `--max-age-days` (default 30) |
+| `critical` | the drift includes `ImageId` or a `--critical-field`, or the stale share exceeds `--critical-pct` (default 50), or the oldest stale instance is older than `--max-age-days` (default 30) |
 
 An `ImageId` difference is critical on its own, whatever the share: one stale instance with
-a different AMI means the next scale-out quietly deploys a different image. Instances in a
-`Terminating` or `Detaching` lifecycle state are churn, not drift, and are skipped.
+a different AMI means the next scale-out quietly deploys a different image. Other fields
+only warn unless you escalate them: `--critical-field MetadataOptions` makes an IMDS change,
+such as `HttpTokens` going from `required` back to `optional`, critical the same way.
+Instances in a `Terminating` or `Detaching` lifecycle state are churn, not drift, and are
+skipped.
 
 ## Install
 
@@ -58,6 +72,8 @@ aws-asg-launch-template-drift --region eu-central-1
 aws-asg-launch-template-drift --tag Environment=prod --max-age-days 14
 aws-asg-launch-template-drift --format json | jq '.groups[] | select(.severity=="critical")'
 aws-asg-launch-template-drift --fail-on critical
+aws-asg-launch-template-drift --critical-field MetadataOptions --fail-on critical
+aws-asg-launch-template-drift --fields ImageId,InstanceType,UserData
 ```
 
 ```console
@@ -90,13 +106,18 @@ legacy-batch [warn]
 | `--tag KEY=VALUE` | all | limit to groups carrying a tag, repeatable |
 | `--critical-pct PCT` | `50` | stale share above which a group is critical |
 | `--max-age-days DAYS` | `30` | stale instance age that makes a group critical |
+| `--fields FIELD[,FIELD]` | all | fields to compare, comma-separated or repeated |
+| `--critical-field FIELD` | — | drift in this field makes a group critical, repeatable; `ImageId` is always critical while it is compared |
 | `--format` | `text` | `text`, `json` or `markdown` |
 | `--fail-on` | `none` | `warn`, `critical` or `none` — drives the exit code |
 | `--from-json PATH` | — | replay a saved payload instead of calling AWS (`-` reads stdin) |
 | `--dump-payload PATH` | — | save the collected payload for later replay |
 
-Exit codes: `0` clean, `1` findings at or above `--fail-on`, `2` bad arguments or a
-malformed payload.
+Exit codes: `0` clean, `1` findings at or above `--fail-on`, `2` bad arguments (including
+an unknown field name, or a `--critical-field` left out of `--fields`) or a malformed payload.
+
+The JSON output carries `compared_fields` and `critical_fields`, so a saved report says
+which rules produced it.
 
 ### In CI
 
@@ -114,6 +135,10 @@ finding can be reproduced and argued about without credentials:
 aws-asg-launch-template-drift --region eu-central-1 --dump-payload /tmp/asg.json
 aws-asg-launch-template-drift --from-json /tmp/asg.json --critical-pct 25
 ```
+
+A payload dumped by an older release has no `MetadataOptions`, `BlockDeviceMappings`,
+`KeyName`, `NetworkInterfaces` or `TagSpecifications` in it, so on replay those fields never
+show drift. Collect again to compare them.
 
 That is also how the test suite works: the collector returns plain dicts, the analyser
 consumes them, and every rule is asserted against JSON fixtures under `tests/fixtures/`

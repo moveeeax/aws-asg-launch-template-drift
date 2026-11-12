@@ -32,3 +32,8 @@ def aged() -> dict:
 @pytest.fixture
 def majority() -> dict:
     return load("majority.json")
+
+
+@pytest.fixture
+def launch_fields() -> dict:
+    return load("launch_fields.json")

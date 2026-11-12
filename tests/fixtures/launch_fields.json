@@ -1,0 +1,92 @@
+{
+  "region": "eu-central-1",
+  "groups": [
+    {
+      "name": "edge-imds",
+      "launch_configuration": null,
+      "launch_template": {
+        "id": "lt-0e1d2c3b4a5960011",
+        "name": "edge",
+        "configured_version": "6",
+        "target_version": "6"
+      },
+      "template_versions": {
+        "5": {
+          "ImageId": "ami-0e1e2e3e4e5e6e7e8",
+          "InstanceType": "t4g.medium",
+          "SecurityGroupIds": ["sg-0edge"],
+          "IamInstanceProfile": "edge",
+          "UserData": "ZWRnZQ==",
+          "MetadataOptions": {"State": "applied", "HttpTokens": "optional", "HttpPutResponseHopLimit": 1, "HttpEndpoint": "enabled"}
+        },
+        "6": {
+          "ImageId": "ami-0e1e2e3e4e5e6e7e8",
+          "InstanceType": "t4g.medium",
+          "SecurityGroupIds": ["sg-0edge"],
+          "IamInstanceProfile": "edge",
+          "UserData": "ZWRnZQ==",
+          "MetadataOptions": {"State": "pending", "HttpEndpoint": "enabled", "HttpTokens": "required", "HttpPutResponseHopLimit": 1}
+        }
+      },
+      "instances": [
+        {"id": "i-0e01", "version": "6", "lifecycle_state": "InService", "launch_time": "2026-10-30T09:00:00+00:00"},
+        {"id": "i-0e02", "version": "6", "lifecycle_state": "InService", "launch_time": "2026-10-30T09:00:10+00:00"},
+        {"id": "i-0e03", "version": "6", "lifecycle_state": "InService", "launch_time": "2026-10-30T09:00:20+00:00"},
+        {"id": "i-0e04", "version": "5", "lifecycle_state": "InService", "launch_time": "2026-10-25T09:00:00+00:00"}
+      ]
+    },
+    {
+      "name": "db-proxy",
+      "launch_configuration": null,
+      "launch_template": {
+        "id": "lt-0d1b2a3c4d5e60022",
+        "name": "db-proxy",
+        "configured_version": "$Latest",
+        "target_version": "3"
+      },
+      "template_versions": {
+        "2": {
+          "ImageId": "ami-0d0d0d0d0d0d0d0d0",
+          "InstanceType": "c7g.large",
+          "SecurityGroupIds": ["sg-0db"],
+          "IamInstanceProfile": "db-proxy",
+          "UserData": "ZGI=",
+          "KeyName": "ops-2024",
+          "BlockDeviceMappings": [
+            {"DeviceName": "/dev/xvda", "Ebs": {"VolumeSize": 20, "VolumeType": "gp2", "DeleteOnTermination": true}},
+            {"DeviceName": "/dev/xvdb", "Ebs": {"VolumeSize": 100, "VolumeType": "gp3"}}
+          ],
+          "NetworkInterfaces": [
+            {"DeviceIndex": 0, "Groups": ["sg-0db"], "AssociatePublicIpAddress": false}
+          ],
+          "TagSpecifications": [
+            {"ResourceType": "instance", "Tags": [{"Key": "team", "Value": "data"}, {"Key": "app", "Value": "db-proxy"}]}
+          ]
+        },
+        "3": {
+          "ImageId": "ami-0d0d0d0d0d0d0d0d0",
+          "InstanceType": "c7g.large",
+          "SecurityGroupIds": ["sg-0db"],
+          "IamInstanceProfile": "db-proxy",
+          "UserData": "ZGI=",
+          "KeyName": "ops-2026",
+          "BlockDeviceMappings": [
+            {"DeviceName": "/dev/xvdb", "Ebs": {"VolumeType": "gp3", "VolumeSize": 100}},
+            {"DeviceName": "/dev/xvda", "Ebs": {"VolumeSize": 50, "VolumeType": "gp3", "DeleteOnTermination": true}}
+          ],
+          "NetworkInterfaces": [
+            {"Groups": ["sg-0db"], "DeviceIndex": 0, "AssociatePublicIpAddress": false}
+          ],
+          "TagSpecifications": [
+            {"ResourceType": "instance", "Tags": [{"Key": "app", "Value": "db-proxy"}, {"Key": "team", "Value": "data"}]}
+          ]
+        }
+      },
+      "instances": [
+        {"id": "i-0d01", "version": "3", "lifecycle_state": "InService", "launch_time": "2026-10-31T09:00:00+00:00"},
+        {"id": "i-0d02", "version": "3", "lifecycle_state": "InService", "launch_time": "2026-10-31T09:00:10+00:00"},
+        {"id": "i-0d03", "version": "2", "lifecycle_state": "InService", "launch_time": "2026-10-27T09:00:00+00:00"}
+      ]
+    }
+  ]
+}

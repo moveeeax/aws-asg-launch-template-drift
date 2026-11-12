@@ -7,6 +7,7 @@ from aws_asg_launch_template_drift.cli import main
 from .conftest import FIXTURES
 
 PROD = str(FIXTURES / "prod.json")
+LAUNCH_FIELDS = str(FIXTURES / "launch_fields.json")
 # The fixtures are pinned in the past, so age never decides a CLI test.
 AGELESS = ["--max-age-days", "36500"]
 
@@ -98,3 +99,43 @@ def test_version_flag(capsys):
         main(["--version"])
     assert excinfo.value.code == 0
     assert "aws-asg-launch-template-drift" in capsys.readouterr().out
+
+
+def test_imds_drift_is_warn_by_default(capsys):
+    assert main(["--from-json", LAUNCH_FIELDS, "--fail-on", "critical", *AGELESS]) == 0
+    assert "MetadataOptions" in capsys.readouterr().out
+
+
+def test_critical_field_escalates_to_exit_one(capsys):
+    args = ["--from-json", LAUNCH_FIELDS, "--fail-on", "critical", *AGELESS]
+    assert main([*args, "--critical-field", "MetadataOptions"]) == 1
+    out = capsys.readouterr().out
+    assert "CRIT  edge-imds" in out
+    assert "marked critical by --critical-field" in out
+
+
+def test_fields_accepts_commas_and_repeats(capsys):
+    args = ["--from-json", LAUNCH_FIELDS, "--format", "json", *AGELESS]
+    assert main([*args, "--fields", "ImageId,KeyName", "--fields", "UserData"]) == 0
+    parsed = json.loads(capsys.readouterr().out)
+    assert parsed["compared_fields"] == ["ImageId", "UserData", "KeyName"]
+    groups = {g["name"]: g for g in parsed["groups"]}
+    assert groups["edge-imds"]["drifted_fields"] == []
+    assert groups["db-proxy"]["drifted_fields"] == ["KeyName"]
+
+
+@pytest.mark.parametrize(
+    "args, message",
+    [
+        (["--fields", "ImageID"], "unknown field 'ImageID'"),
+        (["--critical-field", "Imds"], "unknown field 'Imds'"),
+        (["--fields", ","], "--fields needs at least one field"),
+        (
+            ["--fields", "ImageId", "--critical-field", "KeyName"],
+            "--critical-field KeyName is not among the compared --fields",
+        ),
+    ],
+)
+def test_bad_field_arguments_exit_two(args, message, capsys):
+    assert main(["--from-json", PROD, *args]) == 2
+    assert message in capsys.readouterr().err
