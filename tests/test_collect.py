@@ -65,6 +65,8 @@ VERSIONS = [
             "SecurityGroupIds": ["sg-b", "sg-a"],
             "IamInstanceProfile": {"Arn": "arn:aws:iam::1:instance-profile/web"},
             "UserData": "djE=",
+            "KeyName": "ops",
+            "MetadataOptions": {"State": "applied", "HttpTokens": "optional"},
         },
     },
     {
@@ -76,6 +78,12 @@ VERSIONS = [
             "NetworkInterfaces": [{"Groups": ["sg-a", "sg-b"]}],
             "IamInstanceProfile": {"Arn": "arn:aws:iam::1:instance-profile/web"},
             "UserData": "djI=",
+            "KeyName": "ops",
+            "MetadataOptions": {"State": "applied", "HttpTokens": "required"},
+            "BlockDeviceMappings": [{"DeviceName": "/dev/xvda", "Ebs": {"VolumeSize": 30}}],
+            "TagSpecifications": [
+                {"ResourceType": "instance", "Tags": [{"Key": "app", "Value": "web"}]}
+            ],
         },
     },
 ]
@@ -136,6 +144,30 @@ def test_collect_flattens_template_fields():
     assert versions["4"]["IamInstanceProfile"].endswith("/web")
     # Security groups come from NetworkInterfaces on version 7 and the top level on 4.
     assert sorted(versions["7"]["SecurityGroupIds"]) == ["sg-a", "sg-b"]
+
+
+def test_collect_keeps_the_launch_affecting_fields():
+    payload, _, _ = run_collect()
+    versions = payload["groups"][0]["template_versions"]
+    assert versions["4"]["KeyName"] == "ops"
+    assert versions["4"]["MetadataOptions"]["HttpTokens"] == "optional"
+    assert versions["4"]["BlockDeviceMappings"] is None
+    assert versions["7"]["BlockDeviceMappings"][0]["Ebs"]["VolumeSize"] == 30
+    assert versions["7"]["NetworkInterfaces"] == [{"Groups": ["sg-a", "sg-b"]}]
+    assert versions["7"]["TagSpecifications"][0]["ResourceType"] == "instance"
+
+
+def test_collected_payload_reports_the_new_fields():
+    payload, _, _ = run_collect()
+    web = analyse(payload)["groups"][0]
+    assert web["drifted_fields"] == [
+        "ImageId",
+        "UserData",
+        "MetadataOptions",
+        "BlockDeviceMappings",
+        "NetworkInterfaces",
+        "TagSpecifications",
+    ]
 
 
 def test_collect_attaches_launch_times():

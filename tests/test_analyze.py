@@ -1,6 +1,7 @@
 import pytest
 
 from aws_asg_launch_template_drift.analyze import (
+    COMPARED_FIELDS,
     PayloadError,
     analyse,
     analyse_group,
@@ -188,6 +189,55 @@ def test_unparseable_launch_time_is_not_fatal(now):
     assert finding["oldest_stale_age_days"] is None
 
 
+def test_imds_change_is_reported_as_drift(launch_fields, now):
+    edge = by_name(analyse(launch_fields, now=now), "edge-imds")
+    assert edge["drifted_fields"] == ["MetadataOptions"]
+    assert edge["severity"] == "warn"
+    assert "version 5 also differs in MetadataOptions" in edge["reasons"]
+
+
+def test_critical_field_escalates_a_group(launch_fields, now):
+    result = analyse(launch_fields, now=now, critical_fields=["ImageId", "MetadataOptions"])
+    edge = by_name(result, "edge-imds")
+    assert edge["severity"] == "critical"
+    assert any(
+        reason.startswith("MetadataOptions differs between version 5 and version 6")
+        and "--critical-field" in reason
+        for reason in edge["reasons"]
+    )
+    # An escalated field is not repeated in the "also differs" line.
+    assert not any("also differs" in reason for reason in edge["reasons"])
+    assert by_name(result, "db-proxy")["severity"] == "warn"
+
+
+def test_root_volume_and_key_changes_are_drift(launch_fields, now):
+    proxy = by_name(analyse(launch_fields, now=now), "db-proxy")
+    # Interfaces and tag specifications differ only in key and list order.
+    assert proxy["drifted_fields"] == ["BlockDeviceMappings", "KeyName"]
+    assert "version 2 also differs in BlockDeviceMappings, KeyName" in proxy["reasons"]
+
+
+def test_fields_limit_the_comparison(launch_fields, now):
+    result = analyse(launch_fields, now=now, fields=["ImageId", "KeyName"])
+    assert by_name(result, "edge-imds")["drifted_fields"] == []
+    assert by_name(result, "db-proxy")["drifted_fields"] == ["KeyName"]
+    assert result["compared_fields"] == ["ImageId", "KeyName"]
+    assert result["critical_fields"] == ["ImageId"]
+
+
+def test_image_id_is_not_critical_when_it_is_not_compared(prod, now):
+    fields = [f for f in COMPARED_FIELDS if f != "ImageId"]
+    web = by_name(analyse(prod, now=now, max_age_days=36500, fields=fields), "prod-web")
+    assert web["drifted_fields"] == ["UserData"]
+    assert web["severity"] == "warn"
+
+
+def test_result_lists_compared_and_critical_fields(prod, now):
+    result = analyse(prod, now=now)
+    assert result["compared_fields"] == list(COMPARED_FIELDS)
+    assert result["critical_fields"] == ["ImageId"]
+
+
 class TestDiffVersions:
     def test_identical_versions_do_not_differ(self):
         version = {"ImageId": "ami-1", "SecurityGroupIds": ["sg-a"]}
@@ -209,6 +259,76 @@ class TestDiffVersions:
 
     def test_userdata_is_compared_by_hash(self):
         assert diff_versions({"UserData": "YQ=="}, {"UserData": "Yg=="}) == ["UserData"]
+
+    def test_metadata_state_is_ignored(self):
+        old = {"MetadataOptions": {"HttpTokens": "required", "State": "applied"}}
+        new = {"MetadataOptions": {"HttpTokens": "required", "State": "pending"}}
+        assert diff_versions(old, new) == []
+
+    def test_imdsv1_regression_is_drift(self):
+        old = {"MetadataOptions": {"HttpTokens": "required"}}
+        new = {"MetadataOptions": {"HttpTokens": "optional"}}
+        assert diff_versions(old, new) == ["MetadataOptions"]
+
+    def test_block_device_mapping_order_is_ignored(self):
+        root = {"DeviceName": "/dev/xvda", "Ebs": {"VolumeSize": 20}}
+        data = {"DeviceName": "/dev/xvdb", "Ebs": {"VolumeSize": 100}}
+        assert (
+            diff_versions(
+                {"BlockDeviceMappings": [root, data]}, {"BlockDeviceMappings": [data, root]}
+            )
+            == []
+        )
+
+    def test_root_volume_type_change_is_drift(self):
+        old = {"BlockDeviceMappings": [{"DeviceName": "/dev/xvda", "Ebs": {"VolumeType": "gp2"}}]}
+        new = {"BlockDeviceMappings": [{"DeviceName": "/dev/xvda", "Ebs": {"VolumeType": "gp3"}}]}
+        assert diff_versions(old, new) == ["BlockDeviceMappings"]
+
+    def test_network_interface_and_group_order_is_ignored(self):
+        eth0 = {"DeviceIndex": 0, "Groups": ["sg-a", "sg-b"]}
+        eth1 = {"DeviceIndex": 1, "Groups": ["sg-c"]}
+        swapped = {"DeviceIndex": 0, "Groups": ["sg-b", "sg-a"]}
+        old = {"NetworkInterfaces": [eth0, eth1]}
+        new = {"NetworkInterfaces": [eth1, swapped]}
+        assert diff_versions(old, new) == []
+
+    def test_group_moved_between_interfaces_is_drift(self):
+        old = [{"DeviceIndex": 0, "Groups": ["sg-a"]}, {"DeviceIndex": 1, "Groups": ["sg-b"]}]
+        new = [{"DeviceIndex": 0, "Groups": ["sg-b"]}, {"DeviceIndex": 1, "Groups": ["sg-a"]}]
+        assert diff_versions({"NetworkInterfaces": old}, {"NetworkInterfaces": new}) == [
+            "NetworkInterfaces"
+        ]
+
+    def test_public_ip_on_an_interface_is_drift(self):
+        old = [{"DeviceIndex": 0, "AssociatePublicIpAddress": False}]
+        new = [{"DeviceIndex": 0, "AssociatePublicIpAddress": True}]
+        assert diff_versions({"NetworkInterfaces": old}, {"NetworkInterfaces": new}) == [
+            "NetworkInterfaces"
+        ]
+
+    def test_tag_order_is_ignored_but_values_are_not(self):
+        def spec(*tags):
+            return {
+                "TagSpecifications": [
+                    {"ResourceType": "instance", "Tags": [{"Key": k, "Value": v} for k, v in tags]}
+                ]
+            }
+
+        assert diff_versions(spec(("a", "1"), ("b", "2")), spec(("b", "2"), ("a", "1"))) == []
+        assert diff_versions(spec(("a", "1")), spec(("a", "2"))) == ["TagSpecifications"]
+
+    def test_key_name_change_is_drift(self):
+        assert diff_versions({"KeyName": "old"}, {"KeyName": "new"}) == ["KeyName"]
+
+    def test_empty_list_equals_missing_field(self):
+        old = {"ImageId": "ami-1", "BlockDeviceMappings": [], "MetadataOptions": {}}
+        assert diff_versions(old, {"ImageId": "ami-1"}) == []
+
+    def test_fields_argument_limits_the_diff(self):
+        old = {"ImageId": "ami-1", "KeyName": "a"}
+        new = {"ImageId": "ami-2", "KeyName": "b"}
+        assert diff_versions(old, new, ["KeyName"]) == ["KeyName"]
 
     def test_missing_version_yields_no_diff(self):
         assert diff_versions(None, {"ImageId": "ami-1"}) == []
